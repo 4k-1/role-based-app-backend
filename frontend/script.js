@@ -5,16 +5,14 @@
 let currentUser = null;
 const API_BASE = 'http://localhost:3000/api';
 
-// ============================================
-// AUTH HELPERS (from PDF Step 2)
-// ============================================
+
 
 function getAuthHeader() {
   const token = sessionStorage.getItem('authToken');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Example: Fetch admin data (from PDF Step 2)
+
 async function loadAdminDashboard() {
   const res = await fetch('http://localhost:3000/api/admin/dashboard', {
     headers: getAuthHeader()
