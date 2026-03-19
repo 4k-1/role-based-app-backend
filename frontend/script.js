@@ -6,14 +6,30 @@ let currentUser = null;
 const API_BASE = 'http://localhost:3000/api';
 
 // ============================================
-// AUTH HELPERS
+// AUTH HELPERS (from PDF Step 2)
 // ============================================
 
 function getAuthHeader() {
   const token = sessionStorage.getItem('authToken');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Example: Fetch admin data (from PDF Step 2)
+async function loadAdminDashboard() {
+  const res = await fetch('http://localhost:3000/api/admin/dashboard', {
+    headers: getAuthHeader()
+  });
+  if (res.ok) {
+    const data = await res.json();
+    const el = document.getElementById('content');
+    if (el) el.innerText = data.message;
+  } else {
+    const el = document.getElementById('content');
+    if (el) el.innerText = 'Access denied!';
+  }
+}
+
+// General API fetch helper
 async function apiFetch(endpoint, options = {}) {
   const defaultHeaders = {
     'Content-Type': 'application/json',
@@ -71,7 +87,6 @@ function setAuthState(isAuth, user = null) {
       body.classList.remove('is-admin');
     }
 
-    // Show username in navbar dropdown (PDF uses username not firstName/lastName)
     const userDropdown = document.getElementById('userDropdown');
     if (userDropdown) {
       userDropdown.textContent = user.username;
@@ -87,7 +102,6 @@ async function restoreAuthState() {
   const token = sessionStorage.getItem('authToken');
   if (!token) return false;
 
-  // Call /api/profile to validate token and get user info
   const { ok, data } = await apiFetch('/profile');
   if (ok && data.user) {
     setAuthState(true, data.user);
@@ -111,7 +125,6 @@ function handleRouting() {
   const [route] = hash.split('/').filter(Boolean);
   const pageName = route ? `${route}-page` : 'home-page';
 
-  // Hide all pages
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 
   const protectedRoutes = ['profile', 'requests', 'accounts', 'employees', 'departments'];
@@ -156,7 +169,6 @@ document.addEventListener('DOMContentLoaded', async function () {
   const newRequestBtn = document.getElementById('newRequestBtn');
   const addItemBtn = document.getElementById('addItemBtn');
 
-  // Restore session on load
   await restoreAuthState();
 
   if (!window.location.hash) {
@@ -166,12 +178,11 @@ document.addEventListener('DOMContentLoaded', async function () {
   }
 
   // ========== REGISTRATION ==========
-  // PDF server uses username + password only
   if (registerForm) {
     registerForm.addEventListener('submit', async function (e) {
       e.preventDefault();
 
-      const username = document.getElementById('regFirst').value.trim(); // using first name field as username
+      const username = document.getElementById('regFirst').value.trim();
       const password = document.getElementById('regPassword').value;
 
       if (!username || !password) {
@@ -199,34 +210,42 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
   }
 
-  // ========== LOGIN ==========
-  // PDF server uses username + password (not email)
-  if (loginForm) {
-    loginForm.addEventListener('submit', async function (e) {
-      e.preventDefault();
-
-      // Using email field as username input (no change to HTML needed)
-      const username = document.getElementById('loginEmail').value.trim();
-      const password = document.getElementById('loginPassword').value;
-      const loginError = document.getElementById('loginError');
-
-      const { ok, data } = await apiFetch('/login', {
+  // ========== LOGIN (from PDF Step 1) ==========
+  async function login(username, password) {
+    try {
+      const response = await fetch('http://localhost:3000/api/login', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
-      if (ok) {
+      const data = await response.json();
+
+      if (response.ok) {
         // Save token in sessionStorage
         sessionStorage.setItem('authToken', data.token);
         setAuthState(true, data.user);
         showToast(`Welcome back, ${data.user.username}!`, 'success');
         navigateTo('#/profile');
-        loginForm.reset();
-        if (loginError) loginError.textContent = '';
       } else {
+        const loginError = document.getElementById('loginError');
         if (loginError) loginError.textContent = data.error || 'Login failed';
         showToast(data.error || 'Login failed', 'error');
       }
+    } catch (err) {
+      alert('Network error');
+    }
+  }
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const username = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const loginError = document.getElementById('loginError');
+      if (loginError) loginError.textContent = '';
+      loginForm.reset();
+      await login(username, password);
     });
   }
 
@@ -269,7 +288,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
   }
 
-  // Handle item removal (delegated)
   document.addEventListener('click', function (e) {
     if (e.target.classList.contains('remove-item')) {
       e.target.closest('.item-row').remove();
@@ -454,7 +472,6 @@ async function renderProfile() {
   const profileContent = document.getElementById('profileContent');
   if (!profileContent || !currentUser) return;
 
-  // Call /api/profile to get fresh user data from server
   const { ok, data } = await apiFetch('/profile');
   const user = ok ? data.user : currentUser;
 
@@ -508,34 +525,29 @@ async function renderAccountsList() {
       <table class="table">
         <thead>
           <tr>
-            <th>NAME</th><th>EMAIL</th><th>ROLE</th><th>VERIFIED</th><th>ACTIONS</th>
+            <th>USERNAME</th><th>ROLE</th><th>ACTIONS</th>
           </tr>
         </thead>
         <tbody>
   `;
 
   if (accounts.length === 0) {
-    html += `<tr><td colspan="5" class="text-center text-muted py-4">No accounts found.</td></tr>`;
+    html += `<tr><td colspan="3" class="text-center text-muted py-4">No accounts found.</td></tr>`;
   } else {
     accounts.forEach(account => {
-      const verified = account.verified
-        ? '<i class="fas fa-check" style="color:#28a745;"></i>'
-        : '<i class="fas fa-times" style="color:#dc3545;"></i>';
       const roleBadge = `<span style="background-color:#e8d5f2;color:#800080;padding:0.35rem 0.75rem;border-radius:4px;font-size:0.85rem;font-weight:600;">${account.role}</span>`;
       html += `
         <tr>
-          <td>${account.firstName} ${account.lastName}</td>
-          <td>${account.email}</td>
+          <td>${account.username}</td>
           <td>${roleBadge}</td>
-          <td>${verified}</td>
           <td>
             <button class="btn btn-link" onclick="openAccountModal(${account.id})" title="Edit">
               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#5985E1"><path d="m490-527 37 37 217-217-37-37-217 217ZM200-200h37l233-233-37-37-233 233v37Zm355-205L405-555l167-167-29-29-219 219-56-56 218-219q24-24 56.5-24t56.5 24l29 29 50-50q12-12 28.5-12t28.5 12l93 93q12 12 12 28.5T828-678L555-405ZM270-120H120v-150l285-285 150 150-285 285Z"/></svg>
             </button>
-            <button class="btn btn-link" onclick="resetPassword(${account.id}, '${account.email}')" title="Reset Password">
+            <button class="btn btn-link" onclick="resetPassword(${account.id}, '${account.username}')" title="Reset Password">
               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#EAC452"><path d="M443.5-736.5Q467-760 500-760t56.5 23.5Q580-713 580-680t-23.5 56.5Q533-600 500-600t-56.5-23.5Q420-647 420-680t23.5-56.5ZM500 0 320-180l60-80-60-80 60-85v-47q-54-32-87-86.5T260-680q0-100 70-170t170-70q100 0 170 70t70 170q0 67-33 121.5T620-472v352L500 0ZM340-680q0 56 34 98.5t86 56.5v125l-41 58 61 82-55 71 75 75 40-40v-371q52-14 86-56.5t34-98.5q0-66-47-113t-113-47q-66 0-113 47t-47 113Z"/></svg>
             </button>
-            <button class="btn btn-link" onclick="deleteAccount(${account.id}, '${account.email}')" title="Delete">
+            <button class="btn btn-link" onclick="deleteAccount(${account.id}, '${account.username}')" title="Delete">
               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#992B15"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>
             </button>
           </td>
@@ -576,7 +588,7 @@ async function renderEmployeesTable() {
       <table class="table">
         <thead>
           <tr>
-            <th>EMPLOYEE ID</th><th>EMAIL</th><th>POSITION</th><th>DEPARTMENT</th><th>ACTIONS</th>
+            <th>EMPLOYEE ID</th><th>USERNAME</th><th>POSITION</th><th>DEPARTMENT</th><th>ACTIONS</th>
           </tr>
         </thead>
         <tbody>
@@ -716,13 +728,13 @@ async function openAccountModal(accountId = null) {
     if (ok) {
       const account = data.find(a => a.id === accountId);
       if (account) {
-        document.getElementById('modalFirstName').value = account.firstName;
-        document.getElementById('modalLastName').value = account.lastName;
-        document.getElementById('modalEmail').value = account.email;
+        document.getElementById('modalFirstName').value = account.username || '';
+        document.getElementById('modalLastName').value = '';
+        document.getElementById('modalEmail').value = '';
         document.getElementById('modalPassword').value = '';
         document.getElementById('modalPassword').required = false;
         document.getElementById('modalRole').value = account.role;
-        document.getElementById('modalVerified').checked = account.verified;
+        document.getElementById('modalVerified').checked = account.verified || false;
         document.getElementById('accountModalLabel').textContent = 'Edit Account';
         accountForm.dataset.editingId = accountId;
       }
@@ -741,7 +753,6 @@ async function openEmployeeModal(employeeId = null) {
   const employeeForm = document.getElementById('employeeForm');
   const employeeModal = new bootstrap.Modal(document.getElementById('employeeModal'));
 
-  // Populate department dropdown from API
   const deptSelect = document.getElementById('modalDepartment');
   deptSelect.innerHTML = '<option value="">-- Select Department --</option>';
   const deptResult = await apiFetch('/departments');
@@ -754,15 +765,14 @@ async function openEmployeeModal(employeeId = null) {
     });
   }
 
-  // Populate user email dropdown from API
   const emailSelect = document.getElementById('modalEmployeeEmail');
   emailSelect.innerHTML = '<option value="">-- Select a user --</option>';
   const accResult = await apiFetch('/accounts');
   if (accResult.ok) {
     accResult.data.forEach(account => {
       const option = document.createElement('option');
-      option.value = account.email;
-      option.textContent = `${account.firstName} ${account.lastName} (${account.email})`;
+      option.value = account.username;
+      option.textContent = account.username;
       emailSelect.appendChild(option);
     });
   }
@@ -814,8 +824,8 @@ async function openDepartmentModal(departmentId = null) {
   departmentModal.show();
 }
 
-async function resetPassword(accountId, email) {
-  const newPassword = prompt(`Reset password for ${email}. Enter new password (min 6 chars):`);
+async function resetPassword(accountId, username) {
+  const newPassword = prompt(`Reset password for ${username}. Enter new password (min 6 chars):`);
   if (newPassword === null) return;
 
   if (newPassword.length < 6) {
@@ -829,14 +839,14 @@ async function resetPassword(accountId, email) {
   });
 
   if (ok) {
-    showToast(`Password reset for ${email}`, 'success');
+    showToast(`Password reset for ${username}`, 'success');
   } else {
     showToast(data.error || 'Failed to reset password', 'error');
   }
 }
 
-async function deleteAccount(accountId, email) {
-  if (!confirm(`Delete account for ${email}?`)) return;
+async function deleteAccount(accountId, username) {
+  if (!confirm(`Delete account for ${username}?`)) return;
 
   const { ok, data } = await apiFetch(`/accounts/${accountId}`, { method: 'DELETE' });
 
@@ -849,7 +859,7 @@ async function deleteAccount(accountId, email) {
 }
 
 async function deleteEmployee(employeeId) {
-  if (!confirm(`Delete this employee?`)) return;
+  if (!confirm('Delete this employee?')) return;
 
   const { ok, data } = await apiFetch(`/employees/${employeeId}`, { method: 'DELETE' });
 
@@ -862,7 +872,7 @@ async function deleteEmployee(employeeId) {
 }
 
 async function deleteDepartment(departmentId) {
-  if (!confirm(`Delete this department?`)) return;
+  if (!confirm('Delete this department?')) return;
 
   const { ok, data } = await apiFetch(`/departments/${departmentId}`, { method: 'DELETE' });
 
